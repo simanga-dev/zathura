@@ -515,3 +515,110 @@ girara_list_t* zathura_page_get_signatures(zathura_page_t* page, zathura_error_t
 
   return g_steal_pointer(&ret);
 }
+
+zathura_error_t zathura_page_add_highlight(zathura_page_t* page, girara_list_t* rectangles, double red, double green,
+                                           double blue) {
+  if (page == NULL || page->document == NULL || rectangles == NULL) {
+    return ZATHURA_ERROR_INVALID_ARGUMENTS;
+  }
+
+  const zathura_plugin_t* plugin              = zathura_document_get_plugin(page->document);
+  const zathura_plugin_functions_t* functions = zathura_plugin_get_functions(plugin);
+  if (functions->page_add_highlight == NULL) {
+    return ZATHURA_ERROR_NOT_IMPLEMENTED;
+  }
+
+  zathura_error_t error = ZATHURA_ERROR_OK;
+  if (zathura_page_load(page, &error) == false) {
+    return error;
+  }
+
+  /* the page is changed, so keep the renderer out while the backend works */
+  zathura_document_lock(page->document);
+  error = functions->page_add_highlight(page, page->data, rectangles, red, green, blue);
+  zathura_document_unlock(page->document);
+  return error;
+}
+
+zathura_error_t zathura_page_remove_highlights(zathura_page_t* page, girara_list_t* rectangles,
+                                               unsigned int* removed) {
+  unsigned int count = 0;
+  if (removed != NULL) {
+    *removed = 0;
+  }
+  if (page == NULL || page->document == NULL || rectangles == NULL) {
+    return ZATHURA_ERROR_INVALID_ARGUMENTS;
+  }
+
+  const zathura_plugin_t* plugin              = zathura_document_get_plugin(page->document);
+  const zathura_plugin_functions_t* functions = zathura_plugin_get_functions(plugin);
+  if (functions->page_remove_highlights == NULL) {
+    return ZATHURA_ERROR_NOT_IMPLEMENTED;
+  }
+
+  zathura_error_t error = ZATHURA_ERROR_OK;
+  if (zathura_page_load(page, &error) == false) {
+    return error;
+  }
+
+  zathura_document_lock(page->document);
+  error = functions->page_remove_highlights(page, page->data, rectangles, &count);
+  zathura_document_unlock(page->document);
+  if (removed != NULL) {
+    *removed = count;
+  }
+  return error;
+}
+
+zathura_error_t zathura_page_add_ink(zathura_page_t* page, const double* points, size_t n_points, double width,
+                                     double red, double green, double blue, double opacity) {
+  if (page == NULL || page->document == NULL || points == NULL || n_points == 0) {
+    return ZATHURA_ERROR_INVALID_ARGUMENTS;
+  }
+
+  const zathura_plugin_t* plugin              = zathura_document_get_plugin(page->document);
+  const zathura_plugin_functions_t* functions = zathura_plugin_get_functions(plugin);
+  if (functions->page_add_ink == NULL) {
+    return ZATHURA_ERROR_NOT_IMPLEMENTED;
+  }
+
+  zathura_error_t error = ZATHURA_ERROR_OK;
+  if (zathura_page_load(page, &error) == false) {
+    return error;
+  }
+
+  zathura_document_lock(page->document);
+  error = functions->page_add_ink(page, page->data, points, n_points, width, red, green, blue, opacity);
+  zathura_document_unlock(page->document);
+  return error;
+}
+
+zathura_error_t zathura_page_remove_ink(zathura_page_t* page, double x, double y, double radius,
+                                        unsigned int* removed) {
+  unsigned int count = 0;
+  if (removed != NULL) {
+    *removed = 0;
+  }
+  if (page == NULL || page->document == NULL) {
+    return ZATHURA_ERROR_INVALID_ARGUMENTS;
+  }
+
+  const zathura_plugin_t* plugin              = zathura_document_get_plugin(page->document);
+  const zathura_plugin_functions_t* functions = zathura_plugin_get_functions(plugin);
+  if (functions->page_remove_ink == NULL) {
+    return ZATHURA_ERROR_NOT_IMPLEMENTED;
+  }
+
+  zathura_error_t error = ZATHURA_ERROR_OK;
+  if (zathura_page_load(page, &error) == false) {
+    return error;
+  }
+
+  zathura_document_lock(page->document);
+  error = functions->page_remove_ink(page, page->data, x, y, radius, &count);
+  zathura_document_unlock(page->document);
+  if (removed != NULL) {
+    *removed = count;
+  }
+  return error;
+}

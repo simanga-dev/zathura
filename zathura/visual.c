@@ -2448,3 +2448,153 @@ void zathura_visual_reset(zathura_t* zathura) {
   zathura_visual_mouse_clear(zathura);
   visual_flash_clear(zathura);
 }
+
+/* Highlight annotations */
+
+/* rectangles of the selection on each page, from first to last */
+static void visual_range_rectangles(zathura_t* zathura, visual_texts_t* texts, visual_position_t first,
+                                    visual_position_t last, girara_list_t** pages, unsigned int n_pages) {
+  for (unsigned int page = first.page; page <= last.page && page < n_pages; ++page) {
+    const zathura_visual_text_t* text = visual_text(zathura, texts, page);
+    if (text == NULL || text->n == 0) {
+      continue;
+    }
+    const size_t from = page == first.page ? first.index : 0;
+    const size_t to   = page == last.page ? last.index : text->n - 1;
+    if (from > to) {
+      continue;
+    }
+    pages[page] = visual_selection_rectangles(text, from, to);
+  }
+}
+
+bool zathura_visual_highlight(zathura_t* zathura, bool remove, const char* color) {
+  g_return_val_if_fail(zathura != NULL, false);
+
+  if (zathura_has_document(zathura) == false) {
+    girara_notify(zathura->ui.session, GIRARA_ERROR, _("No document opened."));
+    return false;
+  }
+
+  zathura_document_t* document = zathura_get_document(zathura);
+  const unsigned int n_pages   = zathura_document_get_number_of_pages(document);
+
+  const zathura_plugin_t* plugin              = zathura_document_get_plugin(document);
+  const zathura_plugin_functions_t* functions = zathura_plugin_get_functions(plugin);
+  if (functions == NULL ||
+      (remove == false ? functions->page_add_highlight == NULL : functions->page_remove_highlights == NULL)) {
+    girara_notify(zathura->ui.session, GIRARA_ERROR, _("This document type does not support highlights."));
+    return false;
+  }
+
+  GdkRGBA rgba         = {.red = 1, .green = 1, .blue = 0.596, .alpha = 1};
+  g_autofree char* tmp = NULL;
+  if (color == NULL) {
+    girara_setting_get(zathura->ui.session, "highlight-annotation-color", &tmp);
+    color = tmp;
+  }
+  /* "#" starts a comment on the command line, so also take the hex digits alone, e.g. :highlight 80ff80 */
+  g_autofree char* hex = color != NULL && color[0] != '#' ? g_strdup_printf("#%s", color) : NULL;
+  if (remove == false && color != NULL && gdk_rgba_parse(&rgba, color) == FALSE &&
+      (hex == NULL || gdk_rgba_parse(&rgba, hex) == FALSE)) {
+    girara_notify(zathura->ui.session, GIRARA_ERROR, _("Invalid color: %s"), color);
+    return false;
+  }
+
+  girara_list_t** pages = g_try_malloc0(MAX(n_pages, 1) * sizeof(girara_list_t*));
+  if (pages == NULL) {
+    return false;
+  }
+
+  /* the selection: keyboard first, then a mouse selection over several pages, then one on a single page */
+  zathura_visual_t* visual      = zathura->visual;
+  zathura_visual_mouse_t* mouse = zathura->visual_mouse;
+  if (visual != NULL && (visual->kind == ZATHURA_VISUAL_CHAR || visual->kind == ZATHURA_VISUAL_LINE)) {
+    visual_position_t first;
+    visual_position_t last;
+    visual_selection(zathura, &first, &last);
+    visual_range_rectangles(zathura, &visual->texts, first, last, pages, n_pages);
+  } else if (mouse != NULL && mouse->drawn.drawn == true) {
+    visual_position_t first;
+    visual_position_t last;
+    mouse_order(mouse, &first, &last);
+    visual_range_rectangles(zathura, &mouse->texts, first, last, pages, n_pages);
+  } else {
+    for (unsigned int page = 0; page < n_pages; ++page) {
+      ZathuraPageWidget* widget = zathura_page_get_widget_by_number(zathura, page);
+      if (widget != NULL) {
+        pages[page] = zathura_page_widget_get_selection(widget);
+      }
+    }
+  }
+
+  bool selected        = false;
+  bool failed          = false;
+  unsigned int changed = 0;
+  for (unsigned int idx = 0; idx < n_pages; ++idx) {
+    if (pages[idx] == NULL || girara_list_size(pages[idx]) == 0) {
+      continue;
+    }
+    selected = true;
+
+    zathura_page_t* page = zathura_document_get_page(document, idx);
+    zathura_error_t error;
+    unsigned int removed = 0;
+    if (remove == false) {
+      error = zathura_page_add_highlight(page, pages[idx], rgba.red, rgba.green, rgba.blue);
+      removed = error == ZATHURA_ERROR_OK ? 1 : 0;
+    } else {
+      error = zathura_page_remove_highlights(page, pages[idx], &removed);
+    }
+
+    if (error != ZATHURA_ERROR_OK) {
+      failed = true;
+    }
+    if (removed != 0) {
+      changed += removed;
+      ZathuraPageWidget* widget = zathura_page_get_widget_by_number(zathura, idx);
+      if (widget != NULL) {
+        zathura_page_widget_refresh(widget);
+      }
+    }
+  }
+
+  for (unsigned int idx = 0; idx < n_pages; ++idx) {
+    girara_list_free(pages[idx]);
+  }
+  g_free(pages);
+
+  if (selected == false) {
+    girara_notify(zathura->ui.session, GIRARA_WARNING, _("Select some text first."));
+    return false;
+  }
+
+  /* the highlight replaces the selection */
+  if (visual != NULL) {
+    zathura_visual_exit(zathura);
+  }
+  if (mouse != NULL) {
+    visual_clear_drawn(zathura, &mouse->drawn);
+  }
+  for (unsigned int idx = 0; idx < n_pages; ++idx) {
+    ZathuraPageWidget* widget = zathura_page_get_widget_by_number(zathura, idx);
+    if (widget != NULL) {
+      zathura_page_widget_clear_selection(widget);
+    }
+  }
+
+  if (failed == true) {
+    girara_notify(zathura->ui.session, GIRARA_ERROR,
+                  remove == false ? _("Failed to add the highlight.") : _("Failed to remove highlights."));
+  } else if (remove == false) {
+    zathura->global.unsaved_highlights = true;
+    girara_notify(zathura->ui.session, GIRARA_INFO, _("Highlighted. Use :write to save it into the file."));
+  } else if (changed == 0) {
+    girara_notify(zathura->ui.session, GIRARA_WARNING, _("No highlight in the selection."));
+  } else {
+    zathura->global.unsaved_highlights = true;
+    girara_notify(zathura->ui.session, GIRARA_INFO, _("Removed %u highlight(s). Use :write to save the file."),
+                  changed);
+  }
+  return true;
+}

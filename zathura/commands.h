@@ -135,6 +135,42 @@ bool cmd_quit(girara_session_t* session, girara_list_t* argument_list);
 bool cmd_save(girara_session_t* session, girara_list_t* argument_list);
 
 /**
+ * Highlight the selection, with an optional color
+ *
+ * @param session The used girara session
+ * @param argument_list List of passed arguments
+ * @return true if no error occurred
+ */
+bool cmd_highlight(girara_session_t* session, girara_list_t* argument_list);
+
+/**
+ * Remove the highlights the selection touches
+ *
+ * @param session The used girara session
+ * @param argument_list List of passed arguments
+ * @return true if no error occurred
+ */
+bool cmd_unhighlight(girara_session_t* session, girara_list_t* argument_list);
+
+/**
+ * Turn the pen on or off, optionally setting its color and width first
+ *
+ * @param session The used girara session
+ * @param argument_list List of passed arguments
+ * @return true if no error occurred
+ */
+bool cmd_pen(girara_session_t* session, girara_list_t* argument_list);
+
+/**
+ * Turn the eraser on or off
+ *
+ * @param session The used girara session
+ * @param argument_list List of passed arguments
+ * @return true if no error occurred
+ */
+bool cmd_eraser(girara_session_t* session, girara_list_t* argument_list);
+
+/**
  * Save the current file and overwrite existing files
  *
  * @param session The used girara session

@@ -183,3 +183,12 @@ if weston.found()
     )
   endif
 endif
+
+# drives a real session with the highlight feature; run by hand, see the file
+drive_highlight = executable('drive_highlight', files('drive_highlight.c'),
+  dependencies: build_dependencies + [sqlite],
+  link_whole: libzathura,
+  export_dynamic: true,
+  include_directories: include_directories,
+  c_args: defines + flags
+)

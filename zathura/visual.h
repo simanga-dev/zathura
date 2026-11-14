@@ -333,4 +333,16 @@ void zathura_visual_mouse_clear(zathura_t* zathura);
  */
 void zathura_visual_reset(zathura_t* zathura);
 
+/**
+ * Turn the current selection (visual mode, or a mouse selection on one or
+ * several pages) into highlight annotations of the document, or remove the
+ * highlight annotations it touches.
+ *
+ * @param zathura The zathura session
+ * @param remove Remove highlights instead of adding one
+ * @param color Color of the new highlight, NULL for the highlight-color setting
+ * @return true if there was a selection to act on
+ */
+bool zathura_visual_highlight(zathura_t* zathura, bool remove, const char* color);
+
 #endif // ZATHURA_VISUAL_H

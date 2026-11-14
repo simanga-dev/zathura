@@ -292,6 +292,65 @@ ZATHURA_PLUGIN_API bool zathura_page_label_is_number(zathura_page_t* page);
  */
 ZATHURA_PLUGIN_API girara_list_t* zathura_page_get_signatures(zathura_page_t* page, zathura_error_t* error);
 
+/**
+ * Add a highlight annotation to the page
+ *
+ * @param page The page object
+ * @param rectangles List of zathura_rectangle_t to cover, in page coordinates
+ * @param red Red component of the color (0 to 1)
+ * @param green Green component of the color (0 to 1)
+ * @param blue Blue component of the color (0 to 1)
+ * @return ZATHURA_ERROR_OK when no error occurred, otherwise see
+ *    zathura_error_t
+ */
+ZATHURA_PLUGIN_API zathura_error_t zathura_page_add_highlight(zathura_page_t* page, girara_list_t* rectangles,
+                                                              double red, double green, double blue);
+
+/**
+ * Remove the highlight annotations of the page that intersect the rectangles
+ *
+ * @param page The page object
+ * @param rectangles List of zathura_rectangle_t, in page coordinates
+ * @param removed Set to the number of removed annotations (may be NULL)
+ * @return ZATHURA_ERROR_OK when no error occurred, otherwise see
+ *    zathura_error_t
+ */
+ZATHURA_PLUGIN_API zathura_error_t zathura_page_remove_highlights(zathura_page_t* page, girara_list_t* rectangles,
+                                                                  unsigned int* removed);
+
+/**
+ * Add a freehand ink annotation (one stroke) to the page
+ *
+ * @param page The page object
+ * @param points n_points pairs of x, y in page coordinates
+ * @param n_points Number of points
+ * @param width Line width in points
+ * @param red Red component of the color (0 to 1)
+ * @param green Green component of the color (0 to 1)
+ * @param blue Blue component of the color (0 to 1)
+ * @param opacity Opacity of the stroke (0 to 1)
+ * @return ZATHURA_ERROR_OK when no error occurred, otherwise see
+ *    zathura_error_t
+ */
+ZATHURA_PLUGIN_API zathura_error_t zathura_page_add_ink(zathura_page_t* page, const double* points, size_t n_points,
+                                                        double width, double red, double green, double blue,
+                                                        double opacity);
+
+/**
+ * Remove the ink annotations near a point, or the most recent one
+ *
+ * @param page The page object
+ * @param x X coordinate in page coordinates
+ * @param y Y coordinate in page coordinates
+ * @param radius Distance in page coordinates; negative removes the most
+ *    recently added ink annotation of the page
+ * @param removed Set to the number of removed annotations (may be NULL)
+ * @return ZATHURA_ERROR_OK when no error occurred, otherwise see
+ *    zathura_error_t
+ */
+ZATHURA_PLUGIN_API zathura_error_t zathura_page_remove_ink(zathura_page_t* page, double x, double y, double radius,
+                                                           unsigned int* removed);
+
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(zathura_page_t, zathura_page_free)
 
 #endif // PAGE_H

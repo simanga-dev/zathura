@@ -35,6 +35,7 @@
 #include "shortcuts.h"
 #include "utils.h"
 #include "visual.h"
+#include "draw.h"
 #include "marks.h"
 #include "page.h"
 #include "plugin.h"
@@ -1561,6 +1562,7 @@ bool document_save(zathura_t* zathura, const char* path, bool overwrite) {
     return false;
   }
 
+  zathura->global.unsaved_highlights = false;
   girara_notify(zathura->ui.session, GIRARA_INFO, _("Document saved."));
   return true;
 }
@@ -1662,6 +1664,7 @@ bool document_close(zathura_t* zathura, bool keep_monitor) {
   /* store file information */
   save_fileinfo_to_db(zathura);
   document_stop(zathura);
+  zathura_draw_reset(zathura);
   if (!keep_monitor) {
     /* remove monitor */
     g_clear_object(&zathura->file_monitor.monitor);

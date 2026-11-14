@@ -126,6 +126,40 @@ typedef zathura_error_t (*zathura_plugin_page_get_text_layout_t)(zathura_page_t*
  */
 typedef girara_list_t* (*zathura_plugin_page_get_signatures)(zathura_page_t* page, void* data, zathura_error_t* error);
 
+/**
+ * Add a highlight annotation covering the given rectangles (one per line of
+ * text, in page coordinates) to the page. The annotation is part of the
+ * document and is written by document_save_as.
+ */
+typedef zathura_error_t (*zathura_plugin_page_add_highlight_t)(zathura_page_t* page, void* data,
+                                                               girara_list_t* rectangles, double red, double green,
+                                                               double blue);
+
+/**
+ * Remove the highlight annotations of the page that intersect any of the given
+ * rectangles. The number of removed annotations is stored in removed.
+ */
+typedef zathura_error_t (*zathura_plugin_page_remove_highlights_t)(zathura_page_t* page, void* data,
+                                                                   girara_list_t* rectangles, unsigned int* removed);
+
+/**
+ * Add a freehand ink annotation with a single stroke to the page. The points
+ * are n_points pairs of x, y in page coordinates; width is the line width in
+ * points and opacity is between 0 and 1.
+ */
+typedef zathura_error_t (*zathura_plugin_page_add_ink_t)(zathura_page_t* page, void* data, const double* points,
+                                                         size_t n_points, double width, double red, double green,
+                                                         double blue, double opacity);
+
+/**
+ * Remove the ink annotations of the page whose strokes pass within radius of
+ * the point x, y (page coordinates). If radius is negative, the most recently
+ * added ink annotation of the page is removed instead. The number of removed
+ * annotations is stored in removed.
+ */
+typedef zathura_error_t (*zathura_plugin_page_remove_ink_t)(zathura_page_t* page, void* data, double x, double y,
+                                                            double radius, unsigned int* removed);
+
 struct zathura_plugin_functions_s {
   /**
    * Opens a document
@@ -226,6 +260,26 @@ struct zathura_plugin_functions_s {
    * Get the text layout of a page
    */
   zathura_plugin_page_get_text_layout_t page_get_text_layout;
+
+  /**
+   * Add a highlight annotation
+   */
+  zathura_plugin_page_add_highlight_t page_add_highlight;
+
+  /**
+   * Remove highlight annotations
+   */
+  zathura_plugin_page_remove_highlights_t page_remove_highlights;
+
+  /**
+   * Add a freehand ink annotation
+   */
+  zathura_plugin_page_add_ink_t page_add_ink;
+
+  /**
+   * Remove ink annotations
+   */
+  zathura_plugin_page_remove_ink_t page_remove_ink;
 };
 
 typedef struct zathura_plugin_definition_s {

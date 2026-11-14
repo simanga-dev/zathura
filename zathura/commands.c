@@ -27,6 +27,8 @@
 #include "render.h"
 #include "shortcuts.h"
 #include "utils.h"
+#include "visual.h"
+#include "draw.h"
 #include "zathura.h"
 
 bool cmd_bookmark_create(girara_session_t* session, girara_list_t* argument_list) {
@@ -356,6 +358,9 @@ bool cmd_save(girara_session_t* session, girara_list_t* argument_list) {
 
   if (girara_list_size(argument_list) == 1) {
     document_save(zathura, girara_list_nth(argument_list, 0), false);
+  } else if (girara_list_size(argument_list) == 0) {
+    /* without a file name, write the changes (e.g. highlights) back into the open file */
+    document_save(zathura, zathura_document_get_path(zathura_get_document(zathura)), true);
   } else {
     girara_notify(session, GIRARA_ERROR, _("Invalid number of arguments."));
     return false;
@@ -381,6 +386,9 @@ bool cmd_savef(girara_session_t* session, girara_list_t* argument_list) {
 
   if (girara_list_size(argument_list) == 1) {
     document_save(zathura, girara_list_nth(argument_list, 0), true);
+  } else if (girara_list_size(argument_list) == 0) {
+    /* without a file name, write the changes (e.g. highlights) back into the open file */
+    document_save(zathura, zathura_document_get_path(zathura_get_document(zathura)), true);
   } else {
     girara_notify(session, GIRARA_ERROR, _("Invalid number of arguments."));
     return false;
@@ -388,6 +396,28 @@ bool cmd_savef(girara_session_t* session, girara_list_t* argument_list) {
 
   return true;
 #endif
+}
+
+bool cmd_highlight(girara_session_t* session, girara_list_t* argument_list) {
+  g_return_val_if_fail(session != NULL && argument_list != NULL, false);
+  g_return_val_if_fail(session->global.data != NULL, false);
+  zathura_t* zathura = session->global.data;
+
+  if (girara_list_size(argument_list) > 1) {
+    girara_notify(session, GIRARA_ERROR, _("Invalid number of arguments."));
+    return false;
+  }
+
+  const char* color = girara_list_size(argument_list) == 1 ? girara_list_nth(argument_list, 0) : NULL;
+  return zathura_visual_highlight(zathura, false, color);
+}
+
+bool cmd_unhighlight(girara_session_t* session, girara_list_t* UNUSED(argument_list)) {
+  g_return_val_if_fail(session != NULL, false);
+  g_return_val_if_fail(session->global.data != NULL, false);
+  zathura_t* zathura = session->global.data;
+
+  return zathura_visual_highlight(zathura, true, NULL);
 }
 
 bool cmd_search(girara_session_t* session, const char* input, girara_argument_t* argument) {
@@ -706,4 +736,46 @@ bool cmd_source(girara_session_t* session, girara_list_t* argument_list) {
   config_load_files(zathura);
 
   return true;
+}
+
+bool cmd_pen(girara_session_t* session, girara_list_t* argument_list) {
+  g_return_val_if_fail(session != NULL, false);
+  g_return_val_if_fail(session->global.data != NULL, false);
+  zathura_t* zathura = session->global.data;
+
+  /* :pen [color] [width] sets the pen and turns it on */
+  const size_t n = girara_list_size(argument_list);
+  if (n >= 1) {
+    const char* color    = girara_list_nth(argument_list, 0);
+    g_autofree char* old = NULL;
+    girara_setting_get(session, "pen-color", &old);
+    girara_setting_set(session, "pen-color", color);
+    GdkRGBA rgba;
+    double width;
+    if (zathura_draw_get_pen(zathura, &rgba, &width) == false) {
+      girara_setting_set(session, "pen-color", old);
+      girara_notify(session, GIRARA_ERROR, _("Invalid pen color: %s"), color);
+      return false;
+    }
+  }
+  if (n >= 2) {
+    char* end     = NULL;
+    const float w = g_ascii_strtod(girara_list_nth(argument_list, 1), &end);
+    if (end == NULL || *end != '\0' || w <= 0) {
+      girara_notify(session, GIRARA_ERROR, _("Invalid pen width: %s"), (char*)girara_list_nth(argument_list, 1));
+      return false;
+    }
+    girara_setting_set(session, "pen-width", &w);
+  }
+
+  if (n >= 1 && zathura->global.draw_mode == ZATHURA_DRAW_PEN) {
+    return true;
+  }
+  return zathura_draw_toggle_mode(zathura, ZATHURA_DRAW_PEN);
+}
+
+bool cmd_eraser(girara_session_t* session, girara_list_t* UNUSED(argument_list)) {
+  g_return_val_if_fail(session != NULL, false);
+  g_return_val_if_fail(session->global.data != NULL, false);
+  return zathura_draw_toggle_mode(session->global.data, ZATHURA_DRAW_ERASER);
 }

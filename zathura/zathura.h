@@ -183,6 +183,9 @@ struct zathura_s {
     guint current_index_position;         /**< current row in index */
     int current_search_result;
     int total_search_results;
+    bool unsaved_highlights; /**< Annotations were added or removed since the document was saved */
+    int draw_mode;           /**< Pen or eraser mode, see draw.h */
+    GArray* ink_undo;        /**< Page index of every stroke drawn, for undo */
   } global;
 
   struct {

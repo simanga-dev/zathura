@@ -304,6 +304,11 @@ static void add_default_shortcuts(girara_session_t* gsession, girara_mode_t mode
   girara_shortcut_add(gsession, 0, GDK_KEY_v, NULL, sc_visual, mode, DEFAULT, NULL);
   girara_shortcut_add(gsession, 0, GDK_KEY_V, NULL, sc_visual, mode, LINEWISE, NULL);
   girara_shortcut_add(gsession, 0, 0, "gv", sc_visual_reselect, mode, 0, NULL);
+  girara_shortcut_add(gsession, 0, GDK_KEY_A, NULL, sc_highlight, mode, 0, NULL);
+  girara_shortcut_add(gsession, 0, GDK_KEY_X, NULL, sc_highlight, mode, 1, NULL);
+  girara_shortcut_add(gsession, 0, GDK_KEY_I, NULL, sc_draw, mode, 0, NULL);
+  girara_shortcut_add(gsession, 0, GDK_KEY_E, NULL, sc_draw, mode, 1, NULL);
+  girara_shortcut_add(gsession, 0, GDK_KEY_U, NULL, sc_draw, mode, 2, NULL);
   girara_shortcut_add(gsession, 0, GDK_KEY_O, NULL, sc_focus_inputbar, mode, APPEND_FILEPATH, ":open ");
 
   girara_shortcut_add(gsession, 0, GDK_KEY_f, NULL, sc_follow, mode, 0, NULL);
@@ -541,6 +546,10 @@ void config_load_default(zathura_t* zathura) {
   girara_setting_add(gsession, "highlight-fg",          NULL,         STRING, false, _("Foreground color for highlighting"),cb_color_change, NULL);
   girara_setting_add(gsession, "highlight-active-color",NULL,         STRING, false, _("Color for highlighting (active)"), cb_color_change, NULL);
   girara_setting_add(gsession, "visual-caret-color",    NULL,         STRING, false, _("Color of the caret in visual mode"), cb_color_change, NULL);
+  girara_setting_add(gsession, "highlight-annotation-color", "#ffff98", STRING, false, _("Color of highlights added to the document with A or :highlight"), NULL, NULL);
+  girara_setting_add(gsession, "pen-color",             "#e53935",    STRING, false, _("Color of the pen (I or :pen); rgba() with an alpha below 1 draws see-through"), NULL, NULL);
+  float_value = 2.0;
+  girara_setting_add(gsession, "pen-width",             &float_value, FLOAT,  false, _("Width of the pen in points"), NULL, NULL);
   int_value = 150;
   girara_setting_add(gsession, "visual-flash-duration", &int_value,   INT,    false, _("Milliseconds to highlight text or an image copied in visual mode"), NULL, NULL);
   girara_setting_add(gsession, "render-loading-bg",     NULL,         STRING, false, _("'Loading ...' background color"), cb_color_change, NULL);
@@ -750,6 +759,8 @@ void config_load_default(zathura_t* zathura) {
   girara_shortcut_add(gsession, 0,                0,                   "iW", sc_visual_select, VISUAL, BIGWORD_INNER,     NULL);
   girara_shortcut_add(gsession, 0,                0,                   "aW", sc_visual_select, VISUAL, BIGWORD_AROUND,    NULL);
   girara_shortcut_add(gsession, 0,                GDK_KEY_s,           NULL, sc_visual_jump,   VISUAL, 0,                 NULL);
+  girara_shortcut_add(gsession, 0,                GDK_KEY_A,           NULL, sc_highlight,     VISUAL, 0,                 NULL);
+  girara_shortcut_add(gsession, 0,                GDK_KEY_X,           NULL, sc_highlight,     VISUAL, 1,                 NULL);
 
   /* Visual mode - Mouse events */
   add_default_mouse_events(gsession, VISUAL);
@@ -837,6 +848,10 @@ void config_load_default(zathura_t* zathura) {
   girara_inputbar_command_add(gsession, "save!",      NULL,   cmd_savef,               cc_write,      _("Save document (and force overwriting)"));
   girara_inputbar_command_add(gsession, "write",      NULL,   cmd_save,                cc_write,      _("Save document"));
   girara_inputbar_command_add(gsession, "write!",     NULL,   cmd_savef,               cc_write,      _("Save document (and force overwriting)"));
+  girara_inputbar_command_add(gsession, "highlight",  "hl",   cmd_highlight,           NULL,          _("Highlight the selected text in the document"));
+  girara_inputbar_command_add(gsession, "unhighlight", NULL,  cmd_unhighlight,         NULL,          _("Remove the highlights in the selected text"));
+  girara_inputbar_command_add(gsession, "pen",        NULL,   cmd_pen,                 NULL,          _("Draw on the page: :pen [color] [width]"));
+  girara_inputbar_command_add(gsession, "eraser",     NULL,   cmd_eraser,              NULL,          _("Erase strokes drawn on the page"));
   girara_inputbar_command_add(gsession, "export",     NULL,   cmd_export,              cc_export,     _("Save attachments"));
   girara_inputbar_command_add(gsession, "offset",     NULL,   cmd_offset,              NULL,          _("Set page offset"));
   girara_inputbar_command_add(gsession, "mark",       NULL,   cmd_marks_add,           NULL,          _("Mark current location within the document"));
@@ -889,6 +904,8 @@ void config_load_default(zathura_t* zathura) {
   girara_shortcut_mapping_add(gsession, "toggle_page_mode",         sc_toggle_page_mode);
   girara_shortcut_mapping_add(gsession, "toggle_presentation",      sc_toggle_presentation);
   girara_shortcut_mapping_add(gsession, "toggle_single_page_mode",  sc_toggle_single_page_mode);
+  girara_shortcut_mapping_add(gsession, "highlight",                sc_highlight);
+  girara_shortcut_mapping_add(gsession, "draw",                     sc_draw);
   girara_shortcut_mapping_add(gsession, "visual",                   sc_visual);
   girara_shortcut_mapping_add(gsession, "visual_exit",              sc_visual_exit);
   girara_shortcut_mapping_add(gsession, "visual_find",              sc_visual_find);

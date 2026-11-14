@@ -59,6 +59,21 @@ void zathura_page_widget_update_surface(ZathuraPageWidget* widget, cairo_surface
  * @param widget the widget
  */
 void zathura_page_widget_clear_selection(ZathuraPageWidget* widget);
+
+/**
+ * Copy of the rectangles of the current mouse selection on the page
+ *
+ * @param widget the widget
+ * @return list of zathura_rectangle_t, or NULL if nothing is selected
+ */
+girara_list_t* zathura_page_widget_get_selection(ZathuraPageWidget* widget);
+
+/**
+ * Render the page again, e.g. after its content changed
+ *
+ * @param widget the widget
+ */
+void zathura_page_widget_refresh(ZathuraPageWidget* widget);
 /**
  * Update the mouse selection of the page to end at a point.
  * @param widget the widget
@@ -195,5 +210,13 @@ typedef struct scaled_button_release_event_s {
   guint button;          /**< button number */
   GdkModifierType state; /**< modifier state */
 } scaled_button_release_event_t;
+
+/**
+ * Pen and eraser input at a point in widget coordinates, as the mouse does it
+ * (also used to drive the pen from tests).
+ */
+void zathura_page_widget_ink_press(ZathuraPageWidget* widget, double x, double y);
+void zathura_page_widget_ink_motion(ZathuraPageWidget* widget, double x, double y);
+void zathura_page_widget_ink_release(ZathuraPageWidget* widget);
 
 #endif

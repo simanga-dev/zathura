@@ -29,6 +29,7 @@
 #include "render.h"
 #include "utils.h"
 #include "visual.h"
+#include "draw.h"
 #include "zathura.h"
 
 /* Helper function for highlighting the links */
@@ -63,6 +64,8 @@ bool sc_abort(girara_session_t* session, girara_argument_t* UNUSED(argument), gi
   g_return_val_if_fail(session != NULL, false);
   g_return_val_if_fail(session->global.data != NULL, false);
   zathura_t* zathura = session->global.data;
+
+  zathura_draw_off(zathura);
 
   if (zathura_has_document(zathura)) {
     zathura_document_t* document = zathura_get_document(zathura);
@@ -1528,6 +1531,13 @@ bool sc_quit(girara_session_t* session, girara_argument_t* UNUSED(argument), gir
   g_return_val_if_fail(session->global.data != NULL, false);
   zathura_t* zathura = session->global.data;
 
+  /* ask once before throwing away highlights that were not written to the file */
+  if (zathura->global.unsaved_highlights == true) {
+    zathura->global.unsaved_highlights = false;
+    girara_notify(session, GIRARA_WARNING, _("Highlights and drawings are not saved. Use :write to save them, or quit again."));
+    return false;
+  }
+
   girara_argument_t arg = {.n = GIRARA_HIDE, .data = NULL};
   girara_isc_completion(session, &arg, NULL, 0);
 
@@ -2062,5 +2072,35 @@ bool sc_visual_jump(girara_session_t* session, girara_argument_t* UNUSED(argumen
   zathura_t* zathura = session->global.data;
 
   zathura_visual_jump(zathura);
+  return false;
+}
+
+bool sc_highlight(girara_session_t* session, girara_argument_t* argument, girara_event_t* UNUSED(event),
+                  unsigned int UNUSED(t)) {
+  g_return_val_if_fail(session != NULL, false);
+  g_return_val_if_fail(session->global.data != NULL, false);
+  zathura_t* zathura = session->global.data;
+
+  const bool remove = argument != NULL && argument->n == 1;
+  zathura_visual_highlight(zathura, remove, NULL);
+  return false;
+}
+
+bool sc_draw(girara_session_t* session, girara_argument_t* argument, girara_event_t* UNUSED(event),
+             unsigned int UNUSED(t)) {
+  g_return_val_if_fail(session != NULL, false);
+  g_return_val_if_fail(session->global.data != NULL, false);
+  zathura_t* zathura = session->global.data;
+
+  switch (argument != NULL ? argument->n : 0) {
+  case 1:
+    zathura_draw_toggle_mode(zathura, ZATHURA_DRAW_ERASER);
+    break;
+  case 2:
+    zathura_draw_undo(zathura);
+    break;
+  default:
+    zathura_draw_toggle_mode(zathura, ZATHURA_DRAW_PEN);
+  }
   return false;
 }

@@ -20,6 +20,7 @@
 #include "shortcuts.h"
 #include "zathura.h"
 #include "document-widget.h"
+#include "draw.h"
 
 typedef struct zathura_page_widget_private_s {
   zathura_page_t* page;       /**< Page object */
@@ -67,6 +68,13 @@ typedef struct zathura_page_widget_private_s {
     zathura_rectangle_t selection; /**< x1 y1: click point, x2 y2: current position */
     bool over_link;
   } mouse;
+
+  struct {
+    GArray* points; /**< x, y pairs in widget coordinates of the stroke being drawn */
+    bool active;    /**< The pen or the eraser is pressed on this page */
+    double last_x;  /**< Last point, in widget coordinates */
+    double last_y;
+  } ink;
 
   struct {
     zathura_rectangle_t bounds; /**< Highlight bounds */
@@ -257,6 +265,9 @@ static void zathura_page_widget_init(ZathuraPageWidget* widget) {
   priv->signatures.retrieved = false;
   priv->signatures.draw      = false;
 
+  priv->ink.points = g_array_new(FALSE, FALSE, sizeof(double));
+  priv->ink.active = false;
+
   /* page is drawn into a child drawing area */
   priv->drawing_area = gtk_drawing_area_new();
   gtk_drawing_area_set_draw_func(GTK_DRAWING_AREA(priv->drawing_area), cb_page_draw, widget, NULL);
@@ -330,6 +341,7 @@ static void zathura_page_widget_finalize(GObject* object) {
   girara_list_free(priv->visual.list);
   girara_list_free(priv->visual.labels);
   girara_list_free(priv->visual.flash);
+  g_array_free(priv->ink.points, TRUE);
 
   G_OBJECT_CLASS(zathura_page_widget_parent_class)->finalize(object);
 }
@@ -558,6 +570,35 @@ static zathura_device_factors_t get_safe_device_factors(cairo_surface_t* surface
   }
 
   return factors;
+}
+
+/* the stroke that is being drawn, until it is added to the document on release */
+static void page_widget_draw_ink(ZathuraPageWidget* page, cairo_t* cairo) {
+  ZathuraPageWidgetPrivate* priv = zathura_page_widget_get_instance_private(page);
+  if (priv->ink.active == false || priv->ink.points->len < 2) {
+    return;
+  }
+
+  GdkRGBA color;
+  double width;
+  zathura_draw_get_pen(priv->zathura, &color, &width);
+  const double scale = zathura_document_get_scale(zathura_page_get_document(priv->page));
+
+  cairo_save(cairo);
+  cairo_set_source_rgba(cairo, color.red, color.green, color.blue, color.alpha);
+  cairo_set_line_width(cairo, width * scale);
+  cairo_set_line_cap(cairo, CAIRO_LINE_CAP_ROUND);
+  cairo_set_line_join(cairo, CAIRO_LINE_JOIN_ROUND);
+  const double* pts = (const double*)priv->ink.points->data;
+  cairo_move_to(cairo, pts[0], pts[1]);
+  if (priv->ink.points->len == 2) {
+    cairo_line_to(cairo, pts[0], pts[1]);
+  }
+  for (guint idx = 2; idx + 1 < priv->ink.points->len; idx += 2) {
+    cairo_line_to(cairo, pts[idx], pts[idx + 1]);
+  }
+  cairo_stroke(cairo);
+  cairo_restore(cairo);
 }
 
 static void cb_page_draw(GtkDrawingArea* GIRARA_UNUSED(area), cairo_t* cairo, int width, int height, gpointer data) {
@@ -810,6 +851,7 @@ static void cb_page_draw(GtkDrawingArea* GIRARA_UNUSED(area), cairo_t* cairo, in
       cairo_rectangle(cairo, rectangle.x1, rectangle.y1, rectangle.x2 - rectangle.x1, rectangle.y2 - rectangle.y1);
       cairo_fill(cairo);
     }
+    page_widget_draw_ink(page, cairo);
   } else {
     /* No cached surface yet, render the on-screen page synchronously. All other rendering is asynchronous
      * This makes the rendering of the first page much faster and avoids the "Loading..." message as well */
@@ -1113,6 +1155,38 @@ static void rotate_point(ZathuraPageWidget* widget, double orig_x, double orig_y
   }
 }
 
+girara_list_t* zathura_page_widget_get_selection(ZathuraPageWidget* widget) {
+  g_return_val_if_fail(widget != NULL, NULL);
+
+  ZathuraPageWidgetPrivate* priv = zathura_page_widget_get_instance_private(widget);
+  if (priv->selection.list == NULL || priv->selection.draw == false || girara_list_size(priv->selection.list) == 0) {
+    return NULL;
+  }
+
+  girara_list_t* list = girara_list_new_with_free(g_free);
+  if (list == NULL) {
+    return NULL;
+  }
+  for (size_t idx = 0; idx != girara_list_size(priv->selection.list); ++idx) {
+    girara_list_append(list, g_memdup2(girara_list_nth(priv->selection.list, idx), sizeof(zathura_rectangle_t)));
+  }
+  return list;
+}
+
+void zathura_page_widget_refresh(ZathuraPageWidget* widget) {
+  g_return_if_fail(widget != NULL);
+
+  ZathuraPageWidgetPrivate* priv = zathura_page_widget_get_instance_private(widget);
+  zathura_page_widget_abort_render_request(widget);
+  /* render right away; if the renderer is busy with this page, drop the surface so that it renders again */
+  if (zathura_page_widget_render(widget) == false) {
+    zathura_page_widget_update_surface(widget, NULL, true);
+    if (page_widget_can_render(widget)) {
+      zathura_render_request(priv->render_request, g_get_real_time());
+    }
+  }
+}
+
 void zathura_page_widget_clear_selection(ZathuraPageWidget* widget) {
   g_return_if_fail(widget != NULL);
 
@@ -1124,6 +1198,93 @@ void zathura_page_widget_clear_selection(ZathuraPageWidget* widget) {
   priv->selection.draw   = false;
   priv->highlighter.draw = false;
   zathura_page_widget_redraw_canvas(widget);
+}
+
+/* pen and eraser: the eraser hits strokes within a few pixels of the pointer, at any zoom */
+static void page_widget_ink_erase(ZathuraPageWidget* page, double x, double y) {
+  ZathuraPageWidgetPrivate* priv = zathura_page_widget_get_instance_private(page);
+  const double scale             = zathura_document_get_scale(zathura_page_get_document(priv->page));
+  double px, py;
+  zathura_page_widget_point_to_page(page, x, y, &px, &py);
+  zathura_draw_erase(priv->zathura, zathura_page_get_index(priv->page), px, py, 6.0 / scale);
+}
+
+static void page_widget_ink_press(ZathuraPageWidget* page, double x, double y) {
+  ZathuraPageWidgetPrivate* priv = zathura_page_widget_get_instance_private(page);
+
+  priv->ink.active = true;
+  priv->ink.last_x = x;
+  priv->ink.last_y = y;
+  g_array_set_size(priv->ink.points, 0);
+
+  if (priv->zathura->global.draw_mode == ZATHURA_DRAW_ERASER) {
+    page_widget_ink_erase(page, x, y);
+  } else {
+    g_array_append_val(priv->ink.points, x);
+    g_array_append_val(priv->ink.points, y);
+    zathura_page_widget_redraw_canvas(page);
+  }
+}
+
+static void page_widget_ink_motion(ZathuraPageWidget* page, double x, double y) {
+  ZathuraPageWidgetPrivate* priv = zathura_page_widget_get_instance_private(page);
+
+  /* skip tiny moves: they add points without changing the line */
+  const double dx = x - priv->ink.last_x;
+  const double dy = y - priv->ink.last_y;
+  if (dx * dx + dy * dy < 2.0 * 2.0) {
+    return;
+  }
+  priv->ink.last_x = x;
+  priv->ink.last_y = y;
+
+  if (priv->zathura->global.draw_mode == ZATHURA_DRAW_ERASER) {
+    page_widget_ink_erase(page, x, y);
+  } else {
+    g_array_append_val(priv->ink.points, x);
+    g_array_append_val(priv->ink.points, y);
+    zathura_page_widget_redraw_canvas(page);
+  }
+}
+
+static void page_widget_ink_release(ZathuraPageWidget* page) {
+  ZathuraPageWidgetPrivate* priv = zathura_page_widget_get_instance_private(page);
+
+  const guint len = priv->ink.points->len;
+  if (len >= 2) {
+    double* points    = g_new(double, len);
+    const double* pts = (const double*)priv->ink.points->data;
+    for (guint idx = 0; idx + 1 < len; idx += 2) {
+      zathura_page_widget_point_to_page(page, pts[idx], pts[idx + 1], &points[idx], &points[idx + 1]);
+    }
+    zathura_draw_stroke(priv->zathura, zathura_page_get_index(priv->page), points, len / 2);
+    g_free(points);
+  }
+
+  priv->ink.active = false;
+  g_array_set_size(priv->ink.points, 0);
+  zathura_page_widget_redraw_canvas(page);
+}
+
+void zathura_page_widget_ink_press(ZathuraPageWidget* widget, double x, double y) {
+  g_return_if_fail(widget != NULL);
+  page_widget_ink_press(widget, x, y);
+}
+
+void zathura_page_widget_ink_motion(ZathuraPageWidget* widget, double x, double y) {
+  g_return_if_fail(widget != NULL);
+  ZathuraPageWidgetPrivate* priv = zathura_page_widget_get_instance_private(widget);
+  if (priv->ink.active == true) {
+    page_widget_ink_motion(widget, x, y);
+  }
+}
+
+void zathura_page_widget_ink_release(ZathuraPageWidget* widget) {
+  g_return_if_fail(widget != NULL);
+  ZathuraPageWidgetPrivate* priv = zathura_page_widget_get_instance_private(widget);
+  if (priv->ink.active == true) {
+    page_widget_ink_release(widget);
+  }
 }
 
 static void cb_zathura_page_widget_button_press_event(GtkGestureClick* gesture, gint n_press, gdouble bx, gdouble by,
@@ -1145,6 +1306,13 @@ static void cb_zathura_page_widget_button_press_event(GtkGestureClick* gesture, 
   if (priv->zathura != NULL && priv->zathura->ui.session != NULL &&
       girara_has_mouse_event(priv->zathura->ui.session, etype, gbutton, state) == true) {
     zathura_visual_mouse_cancel(priv->zathura);
+    return;
+  }
+
+  /* with the pen or the eraser the left button draws instead of selecting */
+  if (gbutton == GDK_BUTTON_PRIMARY && priv->zathura != NULL &&
+      priv->zathura->global.draw_mode != ZATHURA_DRAW_OFF) {
+    page_widget_ink_press(page, bx, by);
     return;
   }
 
@@ -1214,6 +1382,11 @@ static void cb_zathura_page_widget_button_release_event(GtkGestureClick* gesture
   g_signal_emit(page, signals[BUTTON_RELEASE], 0, &srelease);
 
   if (gbutton != GDK_BUTTON_PRIMARY) {
+    return;
+  }
+
+  if (priv->ink.active == true) {
+    page_widget_ink_release(page);
     return;
   }
 
@@ -1369,6 +1542,13 @@ static void cb_zathura_page_widget_motion_notify(GtkEventControllerMotion* contr
   zathura_document_t* document = zathura_page_get_document(priv->page);
   const double scale           = zathura_document_get_scale(document);
   GdkModifierType evstate      = gtk_event_controller_get_current_event_state(GTK_EVENT_CONTROLLER(controller));
+
+  if (priv->ink.active == true) {
+    if (evstate & GDK_BUTTON1_MASK) {
+      page_widget_ink_motion(page, ex, ey);
+    }
+    return;
+  }
 
   if (evstate & GDK_BUTTON1_MASK) { /* holding left mouse button */
     if (evstate & priv->zathura->global.highlighter_modmask) {

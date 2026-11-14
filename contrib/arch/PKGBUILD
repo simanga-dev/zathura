@@ -1,0 +1,52 @@
+# Local build of zathura + zathura-pdf-mupdf with highlight (A/X) and pen (I/E/U)
+# annotations. Sources are the patched trees next to this file.
+pkgbase=zathura-annot
+pkgname=(zathura-annot zathura-pdf-mupdf-annot)
+pkgver=2026.10.23
+pkgrel=1
+arch=(x86_64)
+url="https://pwmt.org/projects/zathura/"
+license=(Zlib)
+makedepends=(meson ninja)
+options=(!debug)
+
+prepare() {
+  rm -rf zathura zathura-pdf-mupdf
+  cp -a "$startdir/zathura" "$startdir/zathura-pdf-mupdf" .
+}
+
+build() {
+  meson setup build-zathura zathura --prefix=/usr --libexecdir=lib --buildtype=plain \
+    -Dmanpages=disabled
+  meson compile -C build-zathura
+  DESTDIR="$srcdir/stage" meson install -C build-zathura
+
+  # build the plugin against the new headers (plugin ABI 12), installed into the real plugin dir
+  mkdir -p pc
+  sed "s|^prefix=.*|prefix=$srcdir/stage/usr|" stage/usr/lib/pkgconfig/zathura.pc > pc/zathura.pc
+  PKG_CONFIG_PATH="$srcdir/pc" meson setup build-mupdf zathura-pdf-mupdf --prefix=/usr --buildtype=plain \
+    -Dplugindir=/usr/lib/zathura
+  meson compile -C build-mupdf
+}
+
+package_zathura-annot() {
+  pkgdesc="Minimalistic document viewer, with highlight and pen annotations"
+  depends=(girara sqlite desktop-file-utils file libsynctex libseccomp gtk4 glib2 json-glib)
+  provides=("zathura=$pkgver")
+  conflicts=(zathura)
+  cp -a "$srcdir/stage/." "$pkgdir/"
+  # the upstream man pages need sphinx; keep the ones of the regular package
+  install -Dm644 "$startdir/man/zathura.1.gz" "$pkgdir/usr/share/man/man1/zathura.1.gz"
+  install -Dm644 "$startdir/man/zathurarc.5.gz" "$pkgdir/usr/share/man/man5/zathurarc.5.gz"
+  install -Dm644 "$startdir/man/zathura-sandbox.1.gz" "$pkgdir/usr/share/man/man1/zathura-sandbox.1.gz"
+  install -Dm644 zathura/LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}
+
+package_zathura-pdf-mupdf-annot() {
+  pkgdesc="PDF, EPUB and XPS support for zathura (MuPDF), with annotation editing"
+  depends=(zathura-annot cairo gumbo-parser jbig2dec libjpeg-turbo libmupdf openjpeg2 openssl)
+  provides=("zathura-pdf-mupdf=2026.07.18")
+  conflicts=(zathura-pdf-mupdf)
+  DESTDIR="$pkgdir" meson install -C build-mupdf
+  install -Dm644 zathura-pdf-mupdf/LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}
